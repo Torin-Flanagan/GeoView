@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Geoview Web Application</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Styles for intro and main sections */
+        .introduction-container, .main-container {
+            display: none;
+            padding: 20px;
+            text-align: center;
+        }
+        .introduction-container.active, .main-container.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <!-- Introductory Section -->
+    <div id="intro" class="introduction-container active">
+        <h1>GeoView Introduction</h1>
+        <h2>Application Summary</h2>
+        <h3>
+            <p>
+                1. Each metric can be toggled on and off by using its desired toggle button. <br><br>
+                2. Camera and microphone permissions need to be enabled for the Geoview web application to work properly. <br><br>
+                3. Press the camera record button on and off to record a video for later viewing. <br><br>
+                4. Location and device orientation permission is required for the location, speed, and orientation overlays to work. <br><br>
+                5. Most importantly, we hope you enjoy our app designed for awesome people like you! <br><br>
+            </p>
+        </h3>
+        <button class="introduction-button" onclick="switchToMain()">CLICK ME :)</button>
+    </div>
+
+    <!-- Main Application Section -->
+    <div id="main" class="main-container">
+        <div class="heading-container">
+            <h1>GeoView Main Page</h1>
+        </div>
+        <div class="content-container">
+            <div class="container">
+                <video id="video" autoplay playsinline muted></video>
+                <div id="recordOverlay" class="overlay record" style="display: none;">Record: OFF</div>
+                <div id="locationOverlay" class="overlay location" style="display: none;">Location: OFF</div>
+                <div id="orientationOverlay" class="overlay orientation" style="display: none;">Orientation: OFF</div>
+                <div id="speedOverlay" class="overlay speed" style="display: none;">Speed: OFF</div>
+            </div>
+            <div class="toggles-container">
+                <div class="toggles">
+                    <div class="toggle-button" onclick="toggleMetric('recordOverlay', 'record', 'status3')">Toggle Camera Record <span id="status3" class="status-text">OFF</span></div>
+                    <div class="toggle-button" onclick="toggleMetric('locationOverlay', 'location', 'status4')">Toggle Location <span id="status4" class="status-text">OFF</span></div>
+                    <div class="toggle-button" onclick="toggleMetric('orientationOverlay', 'orientation', 'status1')">Toggle Device Orientation <span id="status1" class="status-text">OFF</span></div>
+                    <div class="toggle-button" onclick="toggleMetric('speedOverlay', 'speed', 'status2')">Toggle Speed <span id="status2" class="status-text">OFF</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Function to switch from intro section to main section
+        function switchToMain() {
+            document.getElementById("intro").classList.remove("active");
+            document.getElementById("main").classList.add("active");
+            startVideo(); // Start the video when switching to main section
+        }
+
+        // Your existing JavaScript functions for the main page
+        let overlayEnabled = { orientation: false, speed: false, location: false, record: false };
+        let mediaRecorder;
+        let recordedChunks = [];
+        let orientationHandler;
+        let locationWatchId;
+        let speedWatchId;
+        let lastPosition = null;
+        let lastTimeStamp = null;
+        let speedEnabled = false;
+
+        async function startVideo() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                const video = document.getElementById('video');
+                video.srcObject = new MediaStream([stream.getVideoTracks()[0]]);
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+                mediaRecorder.onstop = saveRecording;
+            } catch (err) {
+                console.error("Error accessing camera or microphone: ", err);
+                alert("Camera and microphone permission are required for the app to function.");
+            }
+        }
+
+        function toggleMetric(overlayId, metric, statusId) {
+            const overlayElement = document.getElementById(overlayId);
+            const statusElement = document.getElementById(statusId);
+            overlayEnabled[metric] = !overlayEnabled[metric];
+            overlayElement.style.display = overlayEnabled[metric] ? 'flex' : 'none';
+
+            if (overlayEnabled[metric]) {
+                overlayElement.textContent = `${metric.charAt(0).toUpperCase() + metric.slice(1)}: ON`;
+                statusElement.textContent = "ON";
+
+                if (metric === 'record') startRecording();
+                else if (metric === 'orientation') startOrientationTracking(overlayElement);
+                else if (metric === 'location') startLocationTracking(overlayElement);
+                else if (metric === 'speed') startSpeedTracking(overlayElement);
+            } else {
+                overlayElement.textContent = `${metric.charAt(0).toUpperCase() + metric.slice(1)}: OFF`;
+                statusElement.textContent = "OFF";
+
+                if (metric === 'record') stopRecording();
+                else if (metric === 'orientation') stopOrientationTracking();
+                else if (metric === 'location') stopLocationTracking();
+                else if (metric === 'speed') stopSpeedTracking();
+            }
+        }
+
+        //Recording of live camera box
+        function startRecording() {
+            recordedChunks = [];
+            mediaRecorder.start();
+            console.log("Recording started");
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            console.log("Recording stopped");
+        }
+
+        //Saves the recording as a downloadable file
+        function saveRecording() {
+            const blob = new Blob(recordedChunks, { type: "video/webm" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.style.display = "none";
+            a.href = url;
+            a.download = "recording.webm";
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+            console.log("Recording saved");
+        }
+
+        //Handles the orientation of the device (x, y, and z)
+        async function startOrientationTracking(overlayElement) {
+            try {
+                if  (DeviceOrientationEvent.requestPermission) {
+                    const permissionState = await DeviceOrientationEvent.requestPermission();
+                    if (permissionState !== "granted") {
+                        alert("Permission to access device orientation is required.");
+                        return;
+                    }
+                }
+
+                orientationHandler = (event) => {
+                    if (overlayEnabled ['orientation']) {
+                        const alpha = Math.round(event.alpha);
+                        const beta = Math.round(event.beta);
+                        const gamma = Math.round(event.gamma);
+                        overlayElement.innerHTML = `X: ${alpha}° <br>Y: ${beta}° <br>Z: ${gamma}°`;
+                    }
+                };
+
+                window.addEventListener("deviceorientation", orientationHandler);
+            } catch (error) {
+                console.error("Error accessing device's orientation: ", error);
+                overlayElement.textContent = "Orientation: Not supported";
+            }
+        }
+
+        function stopOrientationTracking() {
+            if (orientationHandler) {
+                window.removeEventListener("deviceorientation", orientationHandler);
+                orientationHandler = null;
+            }
+        }
+
+        //Tracks the location of the device (longitude and latitude)
+        function startLocationTracking(overlayElement) {
+            if ("geolocation" in navigator) {
+                locationWatchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        const latitude = position.coords.latitude.toFixed(8);
+                        const longitude = position.coords.longitude.toFixed(8);
+                        overlayElement.innerHTML = `Latitude: ${latitude} ° <br><br>Longitude: ${longitude} °`;
+                    },
+                    (error) => {
+                        console.error("Error getting location: ", error);
+                        overlayElement.textContent = "Unable to retrieve location";
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 0,
+                        timeout: 5000   
+                    }
+                );
+            } else {
+                overlayElement.textContent = "Geolocation not supported";
+            }
+        }
+
+        function stopLocationTracking() {
+            if (locationWatchId) {
+                navigator.geolocation.clearWatch(locationWatchId);
+                locationWatchId = null;
+            }
+        }
+
+        //Tracks the speed of the device (km/h)
+        function toggleSpeedTracking() {
+            speedEnabled = !speedEnabled;
+            const overlayElement = document.getElementById("speedOverlay");
+            const statusElement = document.getElementById("speedStatus");
+            if (speedEnabled) {
+                statusElement.textContent = "ON";
+                overlayElement.style.display = "flex";
+                startSpeedTracking(overlayElement);
+            } else {
+                statusElement.textContent = "OFF";
+                overlayElement.style.display = "none";
+                stopSpeedTracking();
+            }
+        }
+
+        function startSpeedTracking(overlayElement) {
+            if ("geolocation" in navigator) {
+                speedWatchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        const timestamp = position.timestamp;
+                        if (lastPosition && lastTimestamp) {
+                            const distance = calculateDistance(
+                                lastPosition.latitude,
+                                lastPosition.longitude,
+                                latitude,
+                                longitude
+                            );
+                            const timeElapsed = (timestamp - lastTimestamp) / 1000;
+                            const speed = (distance / timeElapsed) * 3.6;
+
+                            overlayElement.textContent = `Speed: ${speed.toFixed(4)} km/h`;
+                        }
+
+                        lastPosition = { latitude, longitude };
+                        lastTimestamp = timestamp;
+                    },
+                    (error) => {
+                        console.error("Error getting location:", error);
+                        overlayElement.textContent = "Unable to retrieve speed";
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 0,
+                        timeout: 5000
+                    }
+                );
+            } else {
+                overlayElement.textContent = "Geolocation not supported";
+            }
+        }
+
+        function stopSpeedTracking() {
+            if (speedWatchId) {
+                navigator.geolocation.clearWatch(speedWatchId);
+                speedWatchId = null;
+            }
+            lastPosition = null;
+            lastTimestamp = null;
+        }
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * (Math.PI / 180);
+            const dLon = (lon2 - lon1) * (Math.PI / 180);
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        window.onload = function() {
+            startVideo();
+        };
+    </script>
+</body>
+</html>
