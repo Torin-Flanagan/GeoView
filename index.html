@@ -35,7 +35,7 @@
         <button class="introduction-button" onclick="switchToMain()">CLICK ME :)</button>
     </div>
 
-    <!-- Main Application Section -->
+    <!-- Main Application HTML Section -->
     <div id="main" class="main-container">
         <div class="heading-container">
             <h1>GeoView Main Page</h1>
@@ -64,10 +64,9 @@
         function switchToMain() {
             document.getElementById("intro").classList.remove("active");
             document.getElementById("main").classList.add("active");
-            startVideo(); // Start the video when switching to main section
+            startVideo();
         }
 
-        // Your existing JavaScript functions for the main page
         let overlayEnabled = { orientation: false, speed: false, location: false, record: false };
         let mediaRecorder;
         let recordedChunks = [];
@@ -78,6 +77,7 @@
         let lastTimeStamp = null;
         let speedEnabled = false;
 
+        //Handles the live camera stream
         async function startVideo() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
